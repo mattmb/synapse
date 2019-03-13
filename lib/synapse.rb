@@ -1,5 +1,6 @@
 require 'logger'
 require 'json'
+require 'memory_profiler'
 
 require 'synapse/version'
 require 'synapse/log'
@@ -33,12 +34,14 @@ module Synapse
 
     # start all the watchers and enable haproxy configuration
     def run
+      mem_loops = 0
       log.info "synapse: starting..."
 
       # start all the watchers
       @service_watchers.map { |watcher| watcher.start }
 
       # main loop
+      profile_started = false
       loops = 0
       loop do
         @service_watchers.each do |w|
@@ -60,6 +63,21 @@ module Synapse
 
         loops += 1
         log.debug "synapse: still running at #{Time.now}" if (loops % 60) == 0
+        if File.file?("/tmp/mmb/synapse-capture")
+          log.warn "Capture toggle exists #{mem_loops} #{loops}"
+          if !profile_started
+            log.warn "Starting profiler"
+            MemoryProfiler.start
+            profile_started = true
+            mem_loops = loops
+          elsif mem_loops != 0 and loops > mem_loops + 120
+            log.warn "Deleting toggle"
+            File.delete("/tmp/mmb/synapse-capture")
+            log.warn "Stopping profiler"
+            report = MemoryProfiler.stop
+            report.pretty_print(to_file: '/tmp/mmb/synapse-mem.log')
+          end
+        end
       end
 
     rescue StandardError => e
@@ -67,6 +85,7 @@ module Synapse
       raise e
     ensure
       log.warn "synapse: exiting; sending stop signal to all watchers"
+      report = MemoryProfiler.stop
 
       # stop all the watchers
       @service_watchers.map(&:stop)
