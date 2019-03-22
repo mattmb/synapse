@@ -878,6 +878,8 @@ class Synapse::ConfigGenerator
     def tick(watchers)
       if (@time % STATE_FILE_UPDATE_INTERVAL) == 0
         update_state_file(watchers)
+        log.info "Triggering GC after statefile update"
+        GC.start()
       end
 
       @time += 1
