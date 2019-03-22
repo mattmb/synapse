@@ -1,5 +1,6 @@
 require 'logger'
 require 'json'
+require 'gc_tracer'
 
 require 'synapse/version'
 require 'synapse/log'
@@ -33,33 +34,35 @@ module Synapse
 
     # start all the watchers and enable haproxy configuration
     def run
-      log.info "synapse: starting..."
+      GC::Tracer.start_logging("/tmp/synapse-gc.log") do
+        log.info "synapse: starting..."
 
-      # start all the watchers
-      @service_watchers.map { |watcher| watcher.start }
+        # start all the watchers
+        @service_watchers.map { |watcher| watcher.start }
 
-      # main loop
-      loops = 0
-      loop do
-        @service_watchers.each do |w|
-          raise "synapse: service watcher #{w.name} failed ping!" unless w.ping?
-        end
-
-        if @config_updated
-          @config_updated = false
-          @config_generators.each do |config_generator|
-            log.info "synapse: configuring #{config_generator.name}"
-            config_generator.update_config(@service_watchers)
+        # main loop
+        loops = 0
+        loop do
+          @service_watchers.each do |w|
+            raise "synapse: service watcher #{w.name} failed ping!" unless w.ping?
           end
-        end
 
-        sleep 1
-        @config_generators.each do |config_generator|
-          config_generator.tick(@service_watchers)
-        end
+          if @config_updated
+            @config_updated = false
+            @config_generators.each do |config_generator|
+              log.info "synapse: configuring #{config_generator.name}"
+              config_generator.update_config(@service_watchers)
+            end
+          end
 
-        loops += 1
-        log.debug "synapse: still running at #{Time.now}" if (loops % 60) == 0
+          sleep 1
+          @config_generators.each do |config_generator|
+            config_generator.tick(@service_watchers)
+          end
+
+          loops += 1
+          log.debug "synapse: still running at #{Time.now}" if (loops % 60) == 0
+        end
       end
 
     rescue StandardError => e
