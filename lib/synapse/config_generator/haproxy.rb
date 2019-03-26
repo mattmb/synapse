@@ -1293,6 +1293,8 @@ class Synapse::ConfigGenerator
         return
       end
       log.info "synapse: restarted haproxy"
+      log.info "Triggering GC after haproxy restart"
+      GC.start()
 
       @restart_required = false
     end
